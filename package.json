@@ -1,22 +1,40 @@
 {
   "name": "@stonedogcode/slack-notify",
   "version": "0.1.0",
-  "description": "Post a deploy summary to Slack — or to the console when no token is configured.",
+  "description": "Post a deploy summary to Slack \u2014 or to the console when no token is configured.",
   "license": "Apache-2.0",
   "author": "StoneDogCode",
-  "repository": { "type": "git", "url": "git+https://github.com/stonedog-code/stonedog-slack-notify.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stonedog-code/stonedog-slack-notify.git"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "bin": { "stonedog-slack-notify": "./dist/cli.js" },
-  "files": ["dist"],
-  "engines": { "node": ">=20" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "stonedog-slack-notify": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test --experimental-strip-types tests/*.test.ts",
-    "gate": "npm run typecheck && npm run test && npm run build"
+    "gate": "npm run typecheck && npm run test && npm run build",
+    "prepare": "npm run build"
   },
-  "devDependencies": { "typescript": "^5.6.0", "@types/node": "^22.0.0" }
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
 }
