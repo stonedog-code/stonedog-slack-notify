@@ -27,8 +27,149 @@ person actually needs: what shipped, whether it was verified, and what is left.
 npm install --save-dev @stonedogcode/slack-notify
 ```
 
-Set `SLACK_BOT_TOKEN` (scope: `chat:write`) and optionally
-`SLACK_DEFAULT_CHANNEL` (default `#deploy`).
+## Creating the Slack app
+
+You need a **bot token** (`xoxb-…`). It comes from an app you create once per
+workspace.
+
+1. **https://api.slack.com/apps → Create New App → From scratch.** Name it
+   something a reader will recognise in the channel — the app name is what
+   appears as the author of every message — and pick the workspace that holds
+   your target channel.
+2. **OAuth & Permissions → Scopes → Bot Token Scopes → Add an OAuth Scope.**
+   Add **`chat:write`**. That is the only scope this package needs.
+
+   Add **`chat:write.public`** *only* if you would rather not invite the bot to
+   each channel. It lets the app post to any public channel without being a
+   member, which is convenient and a broader grant than most deploys need.
+3. **Install to Workspace**, approve, and copy the **Bot User OAuth Token** —
+   the one starting `xoxb-`.
+
+   Not the App-Level token (`xapp-`, for Socket Mode) and not the User token
+   (`xoxp-`, which acts as *you*). Only `xoxb-` is right here.
+4. **Invite the bot to the channel:** in Slack, `/invite @YourAppName` in
+   `#deploy`. Skipping this without `chat:write.public` gives
+   `not_in_channel` — an error that reads like a permissions problem and is
+   really a missing invite.
+
+### Rotating or revoking
+
+**OAuth & Permissions → Rotate** (or *Revoke All OAuth Tokens*) invalidates the
+old token immediately. Anything still holding it starts printing instead of
+posting, which is visible rather than silent — but nothing warns you, so update
+the store in the same change.
+
+## Configuring
+
+Two environment variables:
+
+| | |
+|---|---|
+| `SLACK_BOT_TOKEN` | the `xoxb-…` token. **Absent ⇒ print, do not send** |
+| `SLACK_DEFAULT_CHANNEL` | optional, default `#deploy` |
+
+### Where to keep the token
+
+**Not in the blob that becomes your container's environment.** A running web app
+has no business holding a Slack token, and mixing deploy-time credentials with
+runtime config widens the blast radius for nothing.
+
+In this fleet the token lives in a dedicated `<project>/deploy` secret that only
+the deploying machine reads:
+
+```bash
+# zsh-safe: `read -p` means "read from coprocess" in zsh, so a bash-style
+# prompt silently leaves the variable UNSET and stores an empty token.
+printf 'Paste the xoxb- token: '
+stty -echo; read -r TOKEN; stty echo; printf '\n'
+
+# Refuse anything that is not a bot token. The failure worth guarding against
+# is not a typo — it is storing an EMPTY value and getting a success payload.
+if [[ "$TOKEN" != xoxb-* ]]; then
+  echo "refusing: expected an xoxb- token, got ${#TOKEN} chars" >&2
+else
+  aws secretsmanager create-secret \
+    --profile <admin-profile> --region <region> \
+    --name <project>/deploy \
+    --description "Deploy-time credentials. NOT injected into the container." \
+    --kms-key-id alias/<project>-prod \
+    --secret-string "$(jq -nc --arg t "$TOKEN" \
+        '{SLACK_BOT_TOKEN:$t, SLACK_DEFAULT_CHANNEL:"#deploy"}')"
+fi
+unset TOKEN
+```
+
+Use `put-secret-value` instead of `create-secret` if the secret already exists.
+
+## Confirming it works
+
+Four checks, cheapest first. Each one rules out a different failure.
+
+### 1. The message renders — no token, no network
+
+```bash
+npx stonedog-slack-notify --service demo --env prod --version 1.0.0 --smoke passed
+```
+
+```
+[slack:dry-run] post -> #deploy
+  *demo* v1.0.0 → prod
+  ✅ smoke passed — deployed AND verified
+  *no tag written* — nothing records what shipped
+```
+
+`dry-run` here means **no token was found**. If you expected it to post, the
+token is not reaching the process — which is the next check.
+
+### 2. The token is stored, and readable by the identity that deploys
+
+Print the *shape*, never the value:
+
+```bash
+aws secretsmanager get-secret-value --profile <deploy-profile> --region <region> \
+  --secret-id <project>/deploy --query SecretString --output text \
+| python3 -c "
+import json,sys
+d=json.load(sys.stdin); t=d.get('SLACK_BOT_TOKEN','')
+print('token length:', len(t), '| xoxb prefix:', t.startswith('xoxb-'))
+print('channel:', d.get('SLACK_DEFAULT_CHANNEL'))
+"
+```
+
+Expect a length around 55–60 and `True`. **A length of 0 is the failure this
+check exists for** — a secret can be created with an empty value and report
+success.
+
+Read it as the **deploy** identity, not the admin one. The read path is what a
+missing grant breaks, and an admin who can read it proves nothing about the
+machine that actually runs the deploy.
+
+### 3. It really posts
+
+```bash
+SLACK_BOT_TOKEN=$(aws secretsmanager get-secret-value --profile <deploy-profile> \
+  --region <region> --secret-id <project>/deploy --query SecretString --output text \
+  | jq -r .SLACK_BOT_TOKEN) \
+npx stonedog-slack-notify --service demo --env prod --version 0.0.0 \
+  --smoke skipped --outstanding "this is a test message, ignore it"
+```
+
+No `[slack:dry-run]` line and no error means it posted. Look in the channel.
+
+Common failures, and what they actually mean:
+
+| Slack error | Cause |
+|---|---|
+| `not_in_channel` | the bot was never invited, and you did not grant `chat:write.public` |
+| `channel_not_found` | wrong name, a private channel, or a `#` on a raw channel id |
+| `invalid_auth` | token revoked, rotated, or a `xoxp-`/`xapp-` token by mistake |
+| `missing_scope` | `chat:write` was never added, or the app was not reinstalled after adding it |
+
+### 4. A real deploy reports
+
+Run a deploy and watch the channel. **Post the unhappy path deliberately at
+least once** — a `--smoke failed` message is the one you actually need to
+trust, and it is the one nobody ever tests.
 
 ## Four design decisions worth knowing before changing it
 
