@@ -1,0 +1,25 @@
+# The merge gate.
+#
+# The job is named `gate` and the NAME IS LOAD-BEARING: branch protection
+# requires that exact context, so renaming this job silently un-gates main —
+# protection goes on requiring a check that no longer reports.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # `npm ci`, not `npm install`: the lockfile is the input set.
+      - run: npm ci
+      - run: npm run typecheck
+      # Prints its own count. "0 failed over 0 tests" and "0 failed over 15"
+      # are the same verdict and different facts.
+      - run: npm test
+      - run: npm run build
