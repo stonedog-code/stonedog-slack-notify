@@ -21,7 +21,10 @@
     "stonedog-slack-notify": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
   ],
   "engines": {
     "node": ">=20"
@@ -31,10 +34,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test --experimental-strip-types tests/*.test.ts",
     "gate": "npm run typecheck && npm run test && npm run build",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "//publish:slack-notify": "Publish to npm, end to end. Run from a terminal, interactively \u2014 npm prompts for the 2FA one-time password and the browser login needs a human, so this is a script you run rather than a CI step.",
+    "publish:slack-notify": "bash scripts/publish-package.sh"
   },
   "devDependencies": {
     "typescript": "^5.6.0",
     "@types/node": "^22.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
