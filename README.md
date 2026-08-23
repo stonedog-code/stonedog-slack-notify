@@ -105,6 +105,25 @@ Use `put-secret-value` instead of `create-secret` if the secret already exists.
 
 Four checks, cheapest first. Each one rules out a different failure.
 
+### 0. The deploy log already tells you
+
+Since **0.2.1** a successful post says so, with Slack's own message id:
+
+```
+[slack] posted to #deploy (ts 1787441464.148339)
+```
+
+That line is the evidence. `ts` comes back from `chat.postMessage` and
+identifies a message that now exists — it is Slack's statement, not this
+package's opinion.
+
+**Before 0.2.1 a successful post printed nothing**, which made it
+indistinguishable from a call that never happened. It turned out to be exactly
+that indistinguishable: confirming the first production deploy took a human
+opening Slack, because the log offered silence either way. If you are reading a
+deploy log and see neither this line nor a `[slack:dry-run]` one, the notifier
+did not run.
+
 ### 1. The message renders — no token, no network
 
 ```bash

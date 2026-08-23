@@ -56,6 +56,14 @@ export interface SendResult {
   channel: string;
   /** The rendered text, so a caller can assert on it. */
   text: string;
+  /**
+   * Slack's own message id for a successful post.
+   *
+   * This is the proof, and it is why it is surfaced rather than discarded.
+   * `sent: true` is this library's opinion; `ts` is Slack's — it comes back in
+   * the `chat.postMessage` response and identifies a message that now exists.
+   */
+  ts?: string;
 }
 
 export const DEFAULT_CHANNEL = "#deploy";
@@ -204,13 +212,20 @@ async function post(
       },
       body: JSON.stringify({ channel, text }),
     });
-    const body = (await response.json()) as { ok?: boolean; error?: string };
+    const body = (await response.json()) as { ok?: boolean; error?: string; ts?: string };
     if (!body.ok) {
       const error = body.error ?? `http ${response.status}`;
       stream.write(`[slack] chat.postMessage rejected: ${error}\n`);
       return { sent: false, dryRun: false, error, channel, text };
     }
-    return { sent: true, dryRun: false, channel, text };
+    // SAY SO. A successful post used to print nothing, which made it
+    // indistinguishable from a call that never happened — and that is exactly
+    // what it turned out to be indistinguishable from: confirming the first
+    // production deploy took a human opening Slack, because the log offered
+    // only silence. Slack hands back a message id; reporting it turns "no error
+    // appeared" into evidence a deploy log actually carries.
+    stream.write(`[slack] posted to ${channel} (ts ${body.ts ?? "unknown"})\n`);
+    return { sent: true, dryRun: false, channel, text, ts: body.ts };
   } catch (cause) {
     const error = cause instanceof Error ? cause.message : String(cause);
     stream.write(`[slack] could not reach Slack: ${error}\n`);

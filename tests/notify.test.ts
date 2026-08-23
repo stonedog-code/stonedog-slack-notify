@@ -176,6 +176,30 @@ test("a Slack rejection is reported, never thrown", async () => {
   }
 });
 
+test("a successful post SAYS SO, with Slack's own message id", async () => {
+  // The whole point. Silence on success is indistinguishable from a call that
+  // never happened — which is precisely what it turned out to be
+  // indistinguishable from in production: confirming the first real deploy took
+  // a human opening Slack, because the log offered nothing either way.
+  process.env.SLACK_BOT_TOKEN = "xoxb-not-real";
+  const saved = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response(JSON.stringify({ ok: true, ts: "1787441464.148339" }), { status: 200 }),
+    )) as typeof fetch;
+  const out = capture();
+  try {
+    const result = await send(base, { stream: out.stream });
+    assert.equal(result.sent, true);
+    assert.equal(result.ts, "1787441464.148339", "Slack's message id must be surfaced, not discarded");
+    assert.match(out.text(), /posted to #deploy/);
+    assert.match(out.text(), /1787441464\.148339/, "the id is the evidence — it must be in the output");
+  } finally {
+    globalThis.fetch = saved;
+    delete process.env.SLACK_BOT_TOKEN;
+  }
+});
+
 test("a successful post reports sent", async () => {
   process.env.SLACK_BOT_TOKEN = "xoxb-not-real";
   const saved = globalThis.fetch;
