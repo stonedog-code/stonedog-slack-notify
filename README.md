@@ -214,6 +214,31 @@ exists so a rollback can find what shipped. With no `--tag` the message says
 *"no tag written — nothing records what shipped"* rather than quietly leaving
 the line out.
 
+## When you already have a better summary — `--text-file`
+
+Some callers build a richer summary than this package can: reading the image and
+deployment state back from the cloud provider, the version from the running
+container, the changes from git. Forcing that through the flags above would
+throw most of it away.
+
+```bash
+your-summary-builder > /tmp/summary.txt
+stonedog-slack-notify --text-file /tmp/summary.txt      # or - for stdin
+```
+
+The console fallback, the never-throwing contract and the exit-0 rule are
+identical; only the rendering moves to you.
+
+**It is a summary, not a log.** Over **40 lines** or **3500 characters** is
+truncated with a line saying so. A run's console output pasted into a channel is
+how a channel gets muted, and how internal hostnames and stack traces end up
+somewhere searchable by a wide audience. Truncation is announced rather than
+silent — a message that quietly loses its second half is worse than one that
+admits it.
+
+An empty file is **refused**, not posted: an empty message reads as "the deploy
+said nothing" rather than "something went wrong".
+
 ## Wiring it into `deploy_web.sh`
 
 Every product in this fleet ends its chain in a bash `release_finish()`, which

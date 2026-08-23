@@ -10,7 +10,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Writable } from "node:stream";
 
-import { DEFAULT_CHANNEL, configured, render, send, type DeploySummary } from "../src/index.ts";
+import {
+  DEFAULT_CHANNEL,
+  MAX_TEXT_CHARS,
+  MAX_TEXT_LINES,
+  clamp,
+  configured,
+  render,
+  send,
+  sendText,
+  type DeploySummary,
+} from "../src/index.ts";
 
 /** A stand-in for stderr that keeps what was written. */
 function capture() {
@@ -191,4 +201,45 @@ test("a raw channel id passes through without a #", async () => {
   const out = capture();
   const result = await withoutToken(() => send(base, { channel: "C0123ABC", stream: out.stream }));
   assert.equal(result.channel, "C0123ABC");
+});
+
+// ── pre-rendered text ────────────────────────────────────────────────────────
+//
+// For callers that already build a better summary than render() can. The
+// console fallback and the never-throwing contract must be identical to send();
+// only the rendering moves.
+
+test("sendText posts the caller's own text verbatim", async () => {
+  const out = capture();
+  const result = await withoutToken(() =>
+    sendText("*optima* v2.1.0 → prod\nsomething only optima knows", { stream: out.stream }),
+  );
+  assert.equal(result.dryRun, true);
+  assert.match(result.text, /something only optima knows/);
+  assert.match(out.text(), /dry-run/);
+});
+
+test("a summary is not a log: over 40 lines is truncated and says so", () => {
+  // The guard exists because a run's console output pasted into a channel is
+  // how a channel gets muted — and how internal detail reaches a searchable,
+  // wide-audience place.
+  const long = Array.from({ length: 100 }, (_, i) => `line ${i}`).join("\n");
+  const out = clamp(long);
+  assert.ok(out.split("\n").length <= MAX_TEXT_LINES + 1, "did not trim to the line limit");
+  assert.match(out, /truncated — this is a summary, not a log/);
+  assert.match(out, /line 0/, "kept the beginning");
+  assert.doesNotMatch(out, /line 99/, "kept the end it should have dropped");
+});
+
+test("a very long single line is truncated by characters too", () => {
+  const wide = "x".repeat(MAX_TEXT_CHARS * 2);
+  const out = clamp(wide);
+  assert.ok(out.length < MAX_TEXT_CHARS + 200);
+  assert.match(out, /truncated/);
+});
+
+test("text within the limits is passed through untouched", () => {
+  // The guard must not add noise to the normal case.
+  const fine = "a\nb\nc";
+  assert.equal(clamp(fine), fine);
 });
