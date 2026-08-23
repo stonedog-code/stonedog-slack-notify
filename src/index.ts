@@ -60,6 +60,21 @@ export interface SendResult {
 
 export const DEFAULT_CHANNEL = "#deploy";
 
+/**
+ * How much pre-rendered text a caller may post.
+ *
+ * A deploy summary is a SUMMARY, never a log. A run's console output pasted
+ * into a channel is how a channel gets muted, and it is also how internal
+ * hostnames and stack traces end up somewhere searchable by a wide audience.
+ * Callers with a richer summary than `render()` produces are the reason
+ * `sendText` exists — but "richer" means a better summary, not a transcript.
+ *
+ * Over the limit is TRUNCATED and SAID SO, not silently dropped: a message
+ * that quietly loses its last half is worse than one that admits it.
+ */
+export const MAX_TEXT_LINES = 40;
+export const MAX_TEXT_CHARS = 3500;
+
 const SLACK_API = "https://slack.com/api";
 
 /** Read at call time, never cached at import — a test sets this after import. */
@@ -155,8 +170,21 @@ export async function send(
   summary: DeploySummary,
   opts: { channel?: string; stream?: NodeJS.WriteStream } = {},
 ): Promise<SendResult> {
+  return post(render(summary), opts);
+}
+
+/**
+ * The transport, shared by `send` and `sendText`.
+ *
+ * One implementation of the console fallback and the never-throwing contract:
+ * two copies would drift, and the half that drifted would be the one nobody
+ * exercised.
+ */
+async function post(
+  text: string,
+  opts: { channel?: string; stream?: NodeJS.WriteStream } = {},
+): Promise<SendResult> {
   const channel = normaliseChannel(opts.channel ?? process.env.SLACK_DEFAULT_CHANNEL);
-  const text = render(summary);
   // stderr, so this cannot corrupt a deploy script's machine-readable stdout.
   const stream = opts.stream ?? process.stderr;
 
@@ -188,4 +216,43 @@ export async function send(
     stream.write(`[slack] could not reach Slack: ${error}\n`);
     return { sent: false, dryRun: false, error, channel, text };
   }
+}
+
+
+/**
+ * Post text the caller rendered itself.
+ *
+ * `send()` renders from a `DeploySummary`, which is the right shape for most
+ * callers. Some already build a better summary than this package can — reading
+ * the image and deployment state back from the cloud provider, the version from
+ * the running container, the changes from git — and forcing that through a
+ * fixed struct would throw most of it away.
+ *
+ * The console fallback, the never-throwing contract and the truncation guard
+ * are identical to `send()`. Only the rendering moves to the caller.
+ */
+export async function sendText(
+  text: string,
+  opts: { channel?: string; stream?: NodeJS.WriteStream } = {},
+): Promise<SendResult> {
+  return post(clamp(text), opts);
+}
+
+/** Trim to the limits, and say so in the message when it bites. */
+export function clamp(text: string): string {
+  let out = text.replace(/\s+$/, "");
+  const lines = out.split("\n");
+  let trimmed = false;
+
+  if (lines.length > MAX_TEXT_LINES) {
+    out = lines.slice(0, MAX_TEXT_LINES).join("\n");
+    trimmed = true;
+  }
+  if (out.length > MAX_TEXT_CHARS) {
+    out = out.slice(0, MAX_TEXT_CHARS);
+    trimmed = true;
+  }
+  return trimmed
+    ? `${out}\n… truncated — this is a summary, not a log. The full output is in the deploy log.`
+    : out;
 }

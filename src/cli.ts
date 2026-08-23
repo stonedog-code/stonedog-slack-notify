@@ -22,7 +22,9 @@
  * not break the chain.
  */
 
-import { send, type DeploySummary, type SmokeStatus } from "./index.js";
+import { readFileSync } from "node:fs";
+
+import { send, sendText, type DeploySummary, type SmokeStatus } from "./index.js";
 
 const SMOKE_VALUES: readonly SmokeStatus[] = ["passed", "failed", "skipped", "crashed"];
 
@@ -40,6 +42,11 @@ function usage(): string {
     "  --outstanding <text> repeatable",
     "  --url <url>",
     "  --channel <#name>    default #deploy, or $SLACK_DEFAULT_CHANNEL",
+    "",
+    "  --text-file <path>   post this text INSTEAD of rendering from the flags.",
+    "                       Use '-' for stdin. For callers that already build a",
+    "                       better summary than this tool can. It is a summary,",
+    "                       not a log: over 40 lines is truncated and says so.",
     "",
     "With no SLACK_BOT_TOKEN it prints what it would have sent, and where.",
   ].join("\n");
@@ -98,6 +105,40 @@ async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) {
     process.stdout.write(`${usage()}\n`);
+    return;
+  }
+
+  // Pre-rendered text short-circuits everything: the caller has already decided
+  // what the message says, so none of the summary flags apply.
+  const textFileIdx = argv.indexOf("--text-file");
+  if (textFileIdx >= 0) {
+    const path = argv[textFileIdx + 1];
+    if (!path) {
+      process.stderr.write("stonedog-slack-notify: --text-file needs a path (or - for stdin)\n");
+      return;
+    }
+    let body: string;
+    try {
+      body = readFileSync(path === "-" ? 0 : path, "utf8");
+    } catch (cause) {
+      process.stderr.write(
+        `stonedog-slack-notify: could not read ${path}: ${cause instanceof Error ? cause.message : cause}\n`,
+      );
+      return;
+    }
+    if (!body.trim()) {
+      // An empty summary posted as an empty message is worse than none: it
+      // reads as "the deploy said nothing" rather than "something went wrong".
+      process.stderr.write("stonedog-slack-notify: --text-file was empty; nothing posted\n");
+      return;
+    }
+    const channelIdx = argv.indexOf("--channel");
+    const result = await sendText(body, {
+      channel: channelIdx >= 0 ? argv[channelIdx + 1] : undefined,
+    });
+    if (result.error) {
+      process.stderr.write(`stonedog-slack-notify: the summary was NOT posted (${result.error}).\n`);
+    }
     return;
   }
 
