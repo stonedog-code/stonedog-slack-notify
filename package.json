@@ -1,6 +1,6 @@
 {
   "name": "@stonedogcode/slack-notify",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Post a deploy summary to Slack \u2014 or to the console when no token is configured.",
   "license": "Apache-2.0",
   "author": "StoneDogCode",
