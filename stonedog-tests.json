@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "project": "stonedog-slack-notify",
+  "tiers": {
+    "unit": {
+      "include": ["tests/**/*.test.mjs", "tests/**/*.test.ts"]
+    }
+  }
+}
